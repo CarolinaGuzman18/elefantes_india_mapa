@@ -1,0 +1,92 @@
+---
+title: "Elefantes en la India"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(sf)
+library(raster)
+library(rgbif)
+library(protolite)
+library(dplyr)
+library(leaflet)
+
+india_geo <- st_read("https://raw.githubusercontent.com/mickeykedia/India-Maps/master/India_Administrative_Maps/country/india_country.geojson")
+```
+
+### Chart A
+
+```{r}
+elephantidae_gbif <- 
+  occ_search(
+    scientificName = 'Elephantidae', 
+    country = 'IN',
+    hasCoordinate = TRUE, 
+    hasGeospatialIssue = FALSE,
+    fields = c('scientificName', 'decimalLongitude', 'decimalLatitude'),
+    limit = 1500
+  )
+
+elephantidae_sf <- 
+  st_as_sf(elephantidae_gbif$data, 
+           coords = c("decimalLongitude", "decimalLatitude"), 
+           crs = 4326
+  )
+
+temperature <- getData("worldclim", var="bio", res=10)
+temperature <- temperature[[c(1)]]
+names(temperature) <- c("Temp")
+
+india_temperatura <-
+  temperature %>%
+  crop(india_geo) %>%
+  mask(india_geo)
+```
+
+```{r}
+pal <- colorNumeric(
+  c("#1FF467", "#1FE7F4", "#1F8FF4"), 
+  values(india_temperatura), 
+  na.color = "transparent"
+)
+
+# Mapa web
+m <- leaflet() %>% 
+  addProviderTiles(providers$Esri.WorldImagery, group = "Imágenes de ESRI") %>% 
+  addProviderTiles(providers$Stamen.TonerLite, group = "Stamen Toner Lite") %>%
+  addProviderTiles(providers$OpenStreetMap.Mapnik, group = "OpenStreetMap") %>%
+  addCircleMarkers(data = elephantidae_sf,
+                   stroke = F,
+                   radius = 4,
+                   fillColor = 'black',
+                   fillOpacity = 1,
+                   group = "Elefantes",
+                   
+  ) %>%
+  addRasterImage(india_temperatura, 
+                 colors = pal, 
+                 opacity = 0.8, 
+                 group = "Temperatura Mínima"
+  ) %>%
+  addLayersControl(
+    baseGroups = c("OpenStreetMap", "Stamen Toner Lite", "Imágenes de ESRI"),
+    overlayGroups = c("Temperatura", "Elefantes"),
+    options = layersControlOptions(collapsed = FALSE)    
+  ) %>%
+  addLegend(pal = pal, 
+            values = values(india_temperatura), 
+            title = "Temperatura"
+  ) %>%
+  addMiniMap(
+    toggleDisplay = TRUE,
+    position = "bottomleft",
+    tiles = providers$Stamen.TonerLite
+  )
+
+m
+```
+
